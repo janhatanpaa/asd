@@ -25,17 +25,19 @@ jobs: # The jobs that run in this workflow
               labels: ["issue", "fix"]
             })
       - name: Comment on new issue #this is another step that comments on the issue 
+        if: github.event_name == 'issues' && github.event.action == 'opened'
         uses: peter-evans/create-or-update-comment@v1 # This step uses the "peter-evans/create-or-update-comment" action to create or update a comment on the issue.
         with:
           issue-number: ${{ github.event.issue.number }} # The issue number is obtained from the context of the event that triggered the action.
           body: | # The body of the comment is a message thanking the user for opening the issue.
-           Thanks for opening this issue! We'll take a look as soon as possible.
+            Thanks for opening this issue! We'll take a look as soon as possible.
   comment_on_close:
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
       - name: Comment on closed issue
+        if: github.event_name == 'issues' && github.event.action == 'closed'
         uses: actions/github-script@v6
         with:
           script: |
@@ -51,6 +53,7 @@ jobs: # The jobs that run in this workflow
       issues: write
     steps:
       - name: Check if first pull request
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
         id: check_pr
         run: |
           if [ $(git rev-list --count HEAD ^main) -eq 1 ]; then
