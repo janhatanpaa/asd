@@ -1,84 +1,71 @@
-# This defines the name of the workflow as it will appear in the "Actions" tab of the GitHub repository.
-name: 'Link Checker: All English'
-
-# The `on` key lets you define the events that trigger when the workflow is run. You can define multiple events here. For more information, see "[AUTOTITLE](/actions/using-workflows/triggering-a-workflow#using-events-to-trigger-workflows)."
-on:
-# Add the `workflow_dispatch` event if you want to be able to manually run this workflow from the UI. For more information, see [`workflow_dispatch`](/actions/using-workflows/events-that-trigger-workflows#workflow_dispatch).
-  workflow_dispatch:
-  # Add the `push` event, so that the workflow runs automatically every time a commit is pushed to a branch called `main`. For more information, see [`push`](/actions/using-workflows/events-that-trigger-workflows#push).
-  push:
-    branches:
-      - main
-  # Add the `pull_request` event, so that the workflow runs automatically every time a pull request is created or updated. For more information, see [`pull_request`](/actions/using-workflows/events-that-trigger-workflows#pull_request).
+name: Label & comment issues #the name of the workflow
+on: # This action will trigger when an issue is reopened or opened.
+  issues:
+    types:
+      - reopened
+      - opened
+      - closed
   pull_request:
-
-# This modifies the default permissions granted to `GITHUB_TOKEN`. This will vary depending on the needs of your workflow. For more information, see "[AUTOTITLE](/actions/using-jobs/assigning-permissions-to-jobs)."
-#
-# In this example, the `pull-requests: read` permission is needed for the `trilom/file-changes-action` action that is used later in this workflow.
-permissions:
-  contents: read
-  pull-requests: read
-# The `concurrency` key ensures that only a single workflow in the same concurrency group will run at the same time. For more information, see "[AUTOTITLE](/actions/using-jobs/using-concurrency)."
-# `concurrency.group` generates a concurrency group name from the workflow name and pull request information. The `||` operator is used to define fallback values. 
-# `concurrency.cancel-in-progress` cancels any currently running job or workflow in the same concurrency group.
-concurrency:
-  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
-  cancel-in-progress: true
-
-# The `jobs` key groups together all the jobs that run in the workflow file.
-jobs:
-  # This line defines a job with the ID `check-links` that is stored within the `jobs` key.
-  check-links:
-    # The `runs-on` key in this example configures the job to run on a GitHub-hosted runner or a self-hosted runner, depending on the repository running the workflow. 
-    # 
-    # In this example, the job will run on a self-hosted runner if the repository is named `docs-internal` and is within the `github` organization. If the repository doesn't match this path, then it will run on an `ubuntu-latest` runner hosted by GitHub. For more information on these options, see "[AUTOTITLE](/actions/using-jobs/choosing-the-runner-for-a-job)."
-    runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
-    # The `steps` key groups together all the steps that will run as part of the `check-links` job. Each job in a workflow has its own `steps` section.
+    types:
+      - opened
+jobs: # The jobs that run in this workflow
+  label_issues: # the first job is named as label_issues
+    runs-on: ubuntu-latest # This job will run on the latest version of Ubuntu.
+    permissions: # This job requires write access to issues in order to add labels and comment.
+      issues: write
+    steps: # The "steps" section contains the individual tasks that will be performed in this job.
+      - name: attach label to issues # The name of the step
+        uses: actions/github-script@v6 # This step uses the "actions/github-script" action to execute a script that adds labels to the issue.
+        with:
+          script: | # The script calls the GitHub REST API to add labels to the issue.
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ["issue", "fix"]
+            })
+      - name: Comment on new issue #this is another step that comments on the issue 
+        uses: peter-evans/create-or-update-comment@v1 # This step uses the "peter-evans/create-or-update-comment" action to create or update a comment on the issue.
+        with:
+          issue-number: ${{ github.event.issue.number }} # The issue number is obtained from the context of the event that triggered the action.
+          body: | # The body of the comment is a message thanking the user for opening the issue.
+           Thanks for opening this issue! We'll take a look as soon as possible.
+  comment_on_close:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
-      # The `uses` key tells the job to retrieve the action named `actions/checkout`. This is an action that checks out your repository and downloads it to the runner, allowing you to run actions against your code (such as testing tools). You must use the checkout action any time your workflow will use the repository's code or you are using an action defined in the repository.
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # This step uses the `actions/setup-node` action to install the specified version of the Node.js software package on the runner, which gives you access to the `npm` command.
-      - name: Setup node
-        uses: actions/setup-node@v4
+      - name: Comment on closed issue
+        uses: actions/github-script@v6
         with:
-          node-version: 16.13.x
-          cache: npm
-
-      # The `run` key tells the job to execute a command on the runner. In this example, `npm ci` is used to install the npm software packages for the project.
-      - name: Install
-        run: npm ci
-
-      # This step uses the `trilom/file-changes-action` action to gather all the changed files. This example is pinned to a specific version of the action, using the `a6ca26c14274c33b15e6499323aac178af06ad4b` SHA.
-      # 
-      # In this example, this step creates the file "${{ env.HOME }}/files.json", among others.
-      - name: Gather files changed
-        uses: trilom/file-changes-action@a6ca26c14274c33b15e6499323aac178af06ad4b
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "The issue is now resolved."
+            })
+  congratulate_on_pr:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check if first pull request
+        id: check_pr
+        run: |
+          if [ $(git rev-list --count HEAD ^main) -eq 1 ]; then
+            echo "::set-output name=is_first_pr::true"
+          else
+            echo "::set-output name=is_first_pr::false"
+          fi
+      - name: Congratulate on first pull request
+        if: steps.check_pr.outputs.is_first_pr == 'true'
+        uses: actions/github-script@v6
         with:
-          fileOutput: 'json'
-
-      # To help with verification, this step lists the contents of `files.json`. This will be visible in the workflow run's log, and can be useful for debugging.
-      - name: Show files changed
-        run: cat $HOME/files.json
-
-      # This step uses the `run` command to execute a script that is stored in the repository at `script/rendered-content-link-checker.mjs` and passes all the parameters it needs to run.
-      - name: Link check (warnings, changed files)
-        run: |
-          ./script/rendered-content-link-checker.mjs \
-            --language en \
-            --max 100 \
-            --check-anchors \
-            --check-images \
-            --verbose \
-            --list $HOME/files.json
-
-      # This step also uses `run` command to execute a script that is stored in the repository at `script/rendered-content-link-checker.mjs` and passes a different set of parameters.
-      - name: Link check (critical, all files)
-        run: |
-          ./script/rendered-content-link-checker.mjs \
-            --language en \
-            --exit \
-            --verbose \
-            --check-images \
-            --level critical
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "Congratulations on opening your first pull request!"
+            })
